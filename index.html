@@ -468,15 +468,36 @@
   function beep(){
     try{
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain); gain.connect(ctx.destination);
-      osc.frequency.value = 528;
-      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.05);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 2.5);
-      osc.start();
-      osc.stop(ctx.currentTime + 2.6);
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 3200;
+      const master = ctx.createGain();
+      master.gain.value = 0.55;
+      master.connect(filter);
+      filter.connect(ctx.destination);
+
+      const fundamental = 196; // тёплый низкий тон, как у гонга
+      const partials = [
+        { ratio: 1,    gain: 1.00, decay: 7.5 },
+        { ratio: 1.99, gain: 0.55, decay: 6.5 },
+        { ratio: 2.42, gain: 0.35, decay: 5.5 },
+        { ratio: 3.86, gain: 0.22, decay: 4.5 },
+        { ratio: 5.40, gain: 0.14, decay: 3.5 },
+      ];
+      const now = ctx.currentTime;
+      partials.forEach(p => {
+        const osc = ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = fundamental * p.ratio;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.exponentialRampToValueAtTime(p.gain, now + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + p.decay);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(now);
+        osc.stop(now + p.decay + 0.2);
+      });
     }catch(e){}
   }
 
