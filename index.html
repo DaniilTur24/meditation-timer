@@ -472,7 +472,7 @@
       filter.type = 'lowpass';
       filter.frequency.value = 3200;
       const master = ctx.createGain();
-      master.gain.value = 0.55;
+      master.gain.value = 0.35;
       master.connect(filter);
       filter.connect(ctx.destination);
 
