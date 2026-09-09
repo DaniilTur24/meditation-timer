@@ -425,7 +425,7 @@
   }
 
   function render(){
-    modeLabel.textContent = mode === 'kiirtan' ? 'Baba Nam Kevalam' : 'Meditation';
+    modeLabel.textContent = mode === 'kiirtan' ? 'Baba Nam Kevalam' : 'Медитация';
     timeDisplay.textContent = formatTime(remaining);
     timeDisplay.classList.toggle('done', remaining <= 0);
     modeKiirtanBtn.classList.toggle('active', mode === 'kiirtan');
