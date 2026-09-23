@@ -663,9 +663,19 @@
       const saveBackground = (blob) => dbRequest('readwrite', s => s.put(blob, BG_KEY));
       const deleteBackground = () => dbRequest('readwrite', s => s.delete(BG_KEY));
 
-      function showBackground(blob) {
-        if (bgUrl) URL.revokeObjectURL(bgUrl);
-        bgUrl = blob ? URL.createObjectURL(blob) : null;
+      // Blobs are shown as data: URLs, not blob: URLs — Railway's CSP allows
+      // "img-src data:" but not "img-src blob:".
+      function blobToDataUrl(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      async function showBackground(blob) {
+        bgUrl = blob ? await blobToDataUrl(blob) : null;
         bg.style.backgroundImage = bgUrl ? `url(${bgUrl})` : 'none';
         renderGallery();
       }
@@ -683,10 +693,20 @@
         del.addEventListener('click', async (e) => {
           e.stopPropagation();
           await deleteBackground();
-          showBackground(null);
+          await showBackground(null);
         });
         div.appendChild(del);
         gallery.appendChild(div);
+      }
+
+      // data: URL -> Blob without fetch() — Railway's CSP blocks "connect-src data:".
+      function dataUrlToBlob(dataUrl) {
+        const [header, base64] = dataUrl.split(',');
+        const mime = header.match(/:(.*?);/)[1];
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return new Blob([bytes], { type: mime });
       }
 
       // One-time migration of the old compressed image from localStorage
@@ -695,7 +715,7 @@
         if (legacy.length) {
           const activeId = localStorage.getItem(LS_KEYS.activeImage);
           const img = legacy.find(i => i.id === activeId) || legacy[0];
-          const blob = await (await fetch(img.data)).blob();
+          const blob = dataUrlToBlob(img.data);
           if (!(await loadBackground())) await saveBackground(blob);
         }
         localStorage.removeItem(LS_KEYS.images);
@@ -705,7 +725,7 @@
       async function initBackground() {
         try {
           await migrateLegacyImage();
-          showBackground(await loadBackground());
+          await showBackground(await loadBackground());
         } catch (err) {
           console.error('Не удалось загрузить фон', err);
         }
@@ -717,7 +737,7 @@
         if (file) {
           try {
             await saveBackground(file);
-            showBackground(file);
+            await showBackground(file);
           } catch (err) {
             console.error('Не удалось загрузить изображение', err);
           }
