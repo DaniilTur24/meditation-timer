@@ -472,7 +472,7 @@
     <div class="section">
       <div class="section-label">Фон</div>
       <label for="upload" class="upload-btn">+ Добавить фото</label>
-      <input type="file" id="upload" accept="image/*" multiple hidden>
+      <input type="file" id="upload" accept="image/*" hidden>
       <div id="gallery"></div>
     </div>
 
@@ -483,8 +483,8 @@
   <script>
     (function () {
       const LS_KEYS = {
-        images: 'med_images',
-        activeImage: 'med_active_image',
+        images: 'med_images',            // legacy, migrated to IndexedDB
+        activeImage: 'med_active_image', // legacy, migrated to IndexedDB
         durations: 'med_durations',
         mode: 'med_mode'
       };
@@ -636,103 +636,93 @@
         });
       });
 
-      // ---- Background images (stored as compressed data URLs in localStorage) ----
+      // ---- Background image (single original file stored in IndexedDB, no recompression) ----
 
-      function getImages() {
-        return JSON.parse(localStorage.getItem(LS_KEYS.images) || '[]');
+      const DB_NAME = 'med_timer';
+      const DB_STORE = 'files';
+      const BG_KEY = 'background';
+      let bgUrl = null;
+
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const req = indexedDB.open(DB_NAME, 1);
+          req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
       }
-      function saveImages(list) {
-        localStorage.setItem(LS_KEYS.images, JSON.stringify(list));
+      async function dbRequest(mode, fn) {
+        const db = await openDb();
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(DB_STORE, mode);
+          const req = fn(tx.objectStore(DB_STORE));
+          tx.oncomplete = () => { db.close(); resolve(req.result); };
+          tx.onerror = () => { db.close(); reject(tx.error); };
+        });
       }
-      function getActiveImageId() {
-        return localStorage.getItem(LS_KEYS.activeImage);
-      }
-      function setActiveImageId(id) {
-        localStorage.setItem(LS_KEYS.activeImage, id);
-        applyBackground();
-      }
-      function applyBackground() {
-        const images = getImages();
-        const activeId = getActiveImageId();
-        const img = images.find(i => i.id === activeId) || images[0];
-        bg.style.backgroundImage = img ? `url(${img.data})` : 'none';
+      const loadBackground = () => dbRequest('readonly', s => s.get(BG_KEY));
+      const saveBackground = (blob) => dbRequest('readwrite', s => s.put(blob, BG_KEY));
+      const deleteBackground = () => dbRequest('readwrite', s => s.delete(BG_KEY));
+
+      function showBackground(blob) {
+        if (bgUrl) URL.revokeObjectURL(bgUrl);
+        bgUrl = blob ? URL.createObjectURL(blob) : null;
+        bg.style.backgroundImage = bgUrl ? `url(${bgUrl})` : 'none';
+        renderGallery();
       }
 
       function renderGallery() {
-        const images = getImages();
-        const activeId = getActiveImageId();
         gallery.innerHTML = '';
-        images.forEach(img => {
-          const div = document.createElement('div');
-          div.className = 'thumb' + (img.id === activeId ? ' active' : '');
-          div.style.backgroundImage = `url(${img.data})`;
-          div.title = 'Нажмите, чтобы выбрать фон';
-          div.addEventListener('click', () => {
-            setActiveImageId(img.id);
-            renderGallery();
-          });
-          const del = document.createElement('div');
-          del.className = 'del';
-          del.textContent = '×';
-          del.title = 'Удалить';
-          del.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const list = getImages().filter(i => i.id !== img.id);
-            saveImages(list);
-            if (getActiveImageId() === img.id) {
-              localStorage.setItem(LS_KEYS.activeImage, list.length ? list[0].id : '');
-            }
-            renderGallery();
-            applyBackground();
-          });
-          div.appendChild(del);
-          gallery.appendChild(div);
+        if (!bgUrl) return;
+        const div = document.createElement('div');
+        div.className = 'thumb active';
+        div.style.backgroundImage = `url(${bgUrl})`;
+        const del = document.createElement('div');
+        del.className = 'del';
+        del.textContent = '×';
+        del.title = 'Удалить';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await deleteBackground();
+          showBackground(null);
         });
+        div.appendChild(del);
+        gallery.appendChild(div);
       }
 
-      function compressImage(file, maxDim, quality) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-              let { width, height } = img;
-              if (width > height && width > maxDim) {
-                height = Math.round(height * (maxDim / width));
-                width = maxDim;
-              } else if (height > maxDim) {
-                width = Math.round(width * (maxDim / height));
-                height = maxDim;
-              }
-              const canvas = document.createElement('canvas');
-              canvas.width = width; canvas.height = height;
-              canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-              resolve(canvas.toDataURL('image/jpeg', quality));
-            };
-            img.onerror = reject;
-            img.src = e.target.result;
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
+      // One-time migration of the old compressed image from localStorage
+      async function migrateLegacyImage() {
+        const legacy = JSON.parse(localStorage.getItem(LS_KEYS.images) || '[]');
+        if (legacy.length) {
+          const activeId = localStorage.getItem(LS_KEYS.activeImage);
+          const img = legacy.find(i => i.id === activeId) || legacy[0];
+          const blob = await (await fetch(img.data)).blob();
+          if (!(await loadBackground())) await saveBackground(blob);
+        }
+        localStorage.removeItem(LS_KEYS.images);
+        localStorage.removeItem(LS_KEYS.activeImage);
+      }
+
+      async function initBackground() {
+        try {
+          await migrateLegacyImage();
+          showBackground(await loadBackground());
+        } catch (err) {
+          console.error('Не удалось загрузить фон', err);
+        }
       }
 
       upload.addEventListener('change', async () => {
-        const files = Array.from(upload.files || []);
-        for (const file of files) {
+        // Only one background is kept: a new upload replaces the previous one.
+        const file = upload.files && upload.files[0];
+        if (file) {
           try {
-            const dataUrl = await compressImage(file, 1920, 0.82);
-            const id = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-            const list = getImages();
-            list.push({ id, data: dataUrl });
-            saveImages(list);
-            if (!getActiveImageId()) setActiveImageId(id);
+            await saveBackground(file);
+            showBackground(file);
           } catch (err) {
             console.error('Не удалось загрузить изображение', err);
           }
         }
-        renderGallery();
-        applyBackground();
         upload.value = '';
       });
 
@@ -766,8 +756,7 @@
 
       // ---- Init ----
       render();
-      renderGallery();
-      applyBackground();
+      initBackground();
     })();
   </script>
 
