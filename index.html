@@ -37,11 +37,7 @@
     #bg {
       position: fixed;
       inset: 0;
-      background-color: #111;
-      background-size: cover;
-      background-position: center;
-      background-repeat: no-repeat;
-      transition: background-image .4s ease;
+      background: #111 url(background.jpg) center / cover no-repeat;
       z-index: 0;
     }
 
@@ -344,82 +340,6 @@
       font-size: 11px;
       font-weight: 600;
     }
-
-    /* background upload */
-    .upload-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      width: 100%;
-      padding: 9px 12px;
-      border: 1px dashed var(--field-border);
-      border-radius: 10px;
-      background: var(--field-bg);
-      color: var(--fg-dim);
-      font-size: 12.5px;
-      cursor: pointer;
-      transition: background .15s ease, color .15s ease, border-color .15s ease;
-      margin-bottom: 10px;
-    }
-
-    .upload-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      color: var(--fg);
-      border-color: rgba(255, 255, 255, 0.25);
-    }
-
-    #gallery {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 7px;
-      max-height: 140px;
-      overflow-y: auto;
-    }
-
-    #gallery:empty {
-      display: none;
-    }
-
-    .thumb {
-      position: relative;
-      width: 52px;
-      height: 52px;
-      border-radius: 9px;
-      overflow: hidden;
-      cursor: pointer;
-      border: 2px solid transparent;
-      background-size: cover;
-      background-position: center;
-      flex-shrink: 0;
-      transition: border-color .15s ease, transform .12s ease;
-    }
-
-    .thumb:hover {
-      transform: scale(1.04);
-    }
-
-    .thumb.active {
-      border-color: var(--accent);
-    }
-
-    .thumb .del {
-      position: absolute;
-      top: 0;
-      right: 0;
-      background: rgba(0, 0, 0, 0.65);
-      color: #fff;
-      width: 18px;
-      height: 18px;
-      font-size: 12px;
-      line-height: 18px;
-      text-align: center;
-      border-radius: 0 0 0 8px;
-    }
-
-    .thumb .del:hover {
-      background: rgba(220, 60, 60, 0.9);
-    }
   </style>
 </head>
 
@@ -468,13 +388,6 @@
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-label">Фон</div>
-      <label for="upload" class="upload-btn">+ Добавить фото</label>
-      <input type="file" id="upload" accept="image/*" hidden>
-      <div id="gallery"></div>
-    </div>
-
     <div class="hint-text">Нажмите <kbd>H</kbd> — показать/скрыть панель, <kbd>F</kbd> — полный экран</div>
   </div>
 
@@ -482,8 +395,6 @@
   <script>
     (function () {
       const LS_KEYS = {
-        images: 'med_images',            // legacy, migrated to IndexedDB
-        activeImage: 'med_active_image', // legacy, migrated to IndexedDB
         durations: 'med_durations',
         mode: 'med_mode'
       };
@@ -491,9 +402,6 @@
       const modeLabel = document.getElementById('modeLabel');
       const timeDisplay = document.getElementById('timeDisplay');
       const panel = document.getElementById('panel');
-      const bg = document.getElementById('bg');
-      const gallery = document.getElementById('gallery');
-      const upload = document.getElementById('upload');
       const startPauseBtn = document.getElementById('startPause');
       const resetBtn = document.getElementById('reset');
       const hideBtn = document.getElementById('hideBtn');
@@ -635,115 +543,13 @@
         });
       });
 
-      // ---- Background image (single original file stored in IndexedDB, no recompression) ----
-
-      const DB_NAME = 'med_timer';
-      const DB_STORE = 'files';
-      const BG_KEY = 'background';
-      let bgUrl = null;
-
-      function openDb() {
-        return new Promise((resolve, reject) => {
-          const req = indexedDB.open(DB_NAME, 1);
-          req.onupgradeneeded = () => req.result.createObjectStore(DB_STORE);
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-      }
-      async function dbRequest(mode, fn) {
-        const db = await openDb();
-        return new Promise((resolve, reject) => {
-          const tx = db.transaction(DB_STORE, mode);
-          const req = fn(tx.objectStore(DB_STORE));
-          tx.oncomplete = () => { db.close(); resolve(req.result); };
-          tx.onerror = () => { db.close(); reject(tx.error); };
-        });
-      }
-      const loadBackground = () => dbRequest('readonly', s => s.get(BG_KEY));
-      const saveBackground = (blob) => dbRequest('readwrite', s => s.put(blob, BG_KEY));
-      const deleteBackground = () => dbRequest('readwrite', s => s.delete(BG_KEY));
-
-      // Blobs are shown as data: URLs, not blob: URLs — Railway's CSP allows
-      // "img-src data:" but not "img-src blob:".
-      function blobToDataUrl(blob) {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
-
-      async function showBackground(blob) {
-        bgUrl = blob ? await blobToDataUrl(blob) : null;
-        bg.style.backgroundImage = bgUrl ? `url(${bgUrl})` : 'none';
-        renderGallery();
-      }
-
-      function renderGallery() {
-        gallery.innerHTML = '';
-        if (!bgUrl) return;
-        const div = document.createElement('div');
-        div.className = 'thumb active';
-        div.style.backgroundImage = `url(${bgUrl})`;
-        const del = document.createElement('div');
-        del.className = 'del';
-        del.textContent = '×';
-        del.title = 'Удалить';
-        del.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          await deleteBackground();
-          await showBackground(null);
-        });
-        div.appendChild(del);
-        gallery.appendChild(div);
-      }
-
-      // data: URL -> Blob without fetch() — Railway's CSP blocks "connect-src data:".
-      function dataUrlToBlob(dataUrl) {
-        const [header, base64] = dataUrl.split(',');
-        const mime = header.match(/:(.*?);/)[1];
-        const binary = atob(base64);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        return new Blob([bytes], { type: mime });
-      }
-
-      // One-time migration of the old compressed image from localStorage
-      async function migrateLegacyImage() {
-        const legacy = JSON.parse(localStorage.getItem(LS_KEYS.images) || '[]');
-        if (legacy.length) {
-          const activeId = localStorage.getItem(LS_KEYS.activeImage);
-          const img = legacy.find(i => i.id === activeId) || legacy[0];
-          const blob = dataUrlToBlob(img.data);
-          if (!(await loadBackground())) await saveBackground(blob);
-        }
-        localStorage.removeItem(LS_KEYS.images);
-        localStorage.removeItem(LS_KEYS.activeImage);
-      }
-
-      async function initBackground() {
-        try {
-          await migrateLegacyImage();
-          await showBackground(await loadBackground());
-        } catch (err) {
-          console.error('Не удалось загрузить фон', err);
-        }
-      }
-
-      upload.addEventListener('change', async () => {
-        // Only one background is kept: a new upload replaces the previous one.
-        const file = upload.files && upload.files[0];
-        if (file) {
-          try {
-            await saveBackground(file);
-            await showBackground(file);
-          } catch (err) {
-            console.error('Не удалось загрузить изображение', err);
-          }
-        }
-        upload.value = '';
-      });
+      // Background is a fixed file (background.jpg). Drop data left by older versions
+      // that let the user upload their own background.
+      try {
+        localStorage.removeItem('med_images');
+        localStorage.removeItem('med_active_image');
+        indexedDB.deleteDatabase('med_timer');
+      } catch (e) { }
 
       // ---- Panel visibility (closed by default, toggled with H) ----
 
@@ -775,7 +581,6 @@
 
       // ---- Init ----
       render();
-      initBackground();
     })();
   </script>
 
