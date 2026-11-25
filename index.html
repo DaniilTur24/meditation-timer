@@ -49,6 +49,25 @@
       background: radial-gradient(ellipse 55% 40% at center, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 80%);
     }
 
+    /* static logo, top-left corner (mirrors the 20px offset of the top-right buttons) */
+    #logo {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      height: 120px;
+      width: auto;
+      z-index: 5;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    @media (max-width: 560px) {
+      #logo {
+        height: 72px;
+      }
+    }
+
     #center {
       position: fixed;
       inset: 0;
@@ -347,6 +366,7 @@
 
   <div id="bg"></div>
   <div id="vignette"></div>
+  <img id="logo" src="logo.png" alt="Meditation Utopia — Spiritual Academy" draggable="false">
 
   <div id="center">
     <div id="modeLabel">Baba Nam Kevalam</div>
