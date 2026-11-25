@@ -49,12 +49,12 @@
       background: radial-gradient(ellipse 55% 40% at center, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.15) 55%, rgba(0, 0, 0, 0) 80%);
     }
 
-    /* static logo, top-left corner (mirrors the 20px offset of the top-right buttons) */
+    /* static logo, top-right corner, just left of the fullscreen button */
     #logo {
       position: fixed;
       top: 20px;
-      left: 20px;
-      height: 120px;
+      right: 70px;
+      height: 130px;
       width: auto;
       z-index: 5;
       pointer-events: none;
@@ -64,7 +64,8 @@
 
     @media (max-width: 560px) {
       #logo {
-        height: 72px;
+        height: 64px;
+        right: 66px;
       }
     }
 
